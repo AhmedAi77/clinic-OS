@@ -7,6 +7,7 @@ import {
 import { LogOut, Globe, ArrowLeft, ArrowRight, Home } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
+import { dashboardPath } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 
 function VioraLogo({ className }: { className?: string }) {
@@ -45,21 +46,6 @@ export function AppHeader() {
   const isHome = pathname === "/";
   const BackIcon = lang === "ar" ? ArrowRight : ArrowLeft;
 
-  const homeForRole = () => {
-    switch (role) {
-      case "admin":
-        return "/admin";
-      case "doctor":
-        return "/doctor";
-      case "receptionist":
-        return "/reception";
-      case "patient":
-        return "/patient";
-      default:
-        return "/";
-    }
-  };
-
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/80 backdrop-blur-md">
       <div className="container mx-auto flex h-16 items-center justify-between gap-4 px-4">
@@ -92,11 +78,11 @@ export function AppHeader() {
         </div>
 
         <div className="flex items-center gap-2">
-          {user && !isHome && pathname !== homeForRole() && (
+          {user && !isHome && pathname !== dashboardPath(role) && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate({ to: homeForRole() })}
+              onClick={() => navigate({ to: dashboardPath(role) })}
               title={t("dashboard")}
             >
               <Home className="size-4" />
@@ -119,7 +105,7 @@ export function AppHeader() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate({ to: homeForRole() })}
+                onClick={() => navigate({ to: dashboardPath(role) })}
               >
                 {t("dashboard")}
               </Button>

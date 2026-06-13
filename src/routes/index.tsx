@@ -105,19 +105,19 @@ function Home() {
           <p className="text-muted-foreground mt-2 text-sm">{t("tagline")}</p>
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {features.map((f, i) => (
+          {features.map((feature) => (
             <div
-              key={i}
+              key={feature.title}
               className="rounded-2xl border bg-card p-6 shadow-card hover:shadow-elegant transition-all duration-300 hover:-translate-y-1 group"
             >
               <div
-                className={`size-12 rounded-xl ${f.bg} grid place-items-center ${f.color} mb-4 transition-transform duration-300 group-hover:scale-110`}
+                className={`size-12 rounded-xl ${feature.bg} grid place-items-center ${feature.color} mb-4 transition-transform duration-300 group-hover:scale-110`}
               >
-                <f.icon className="size-6" />
+                <feature.icon className="size-6" />
               </div>
-              <h3 className="font-semibold mb-2">{f.title}</h3>
+              <h3 className="font-semibold mb-2">{feature.title}</h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                {f.desc}
+                {feature.desc}
               </p>
             </div>
           ))}

@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
@@ -9,12 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Calendar as CalendarIcon,
-  Stethoscope,
-  FileText,
-  Clock,
-} from "lucide-react";
+import { Calendar as CalendarIcon, Stethoscope, FileText, Clock } from "lucide-react";
 import { getAvailableSlots } from "@/lib/clinic";
 import {
   Select,
@@ -75,20 +70,16 @@ function BookAppointment() {
   const { t } = useI18n();
   const { user } = useAuth();
   const [doctors, setDoctors] = useState<any[]>([]);
-  const [doctorId, setDoctorId] = useState<string>("");
-  const [date, setDate] = useState<string>(
-    new Date().toISOString().slice(0, 10),
-  );
+  const [doctorId, setDoctorId] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [slots, setSlots] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [booking, setBooking] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
 
   useEffect(() => {
     supabase
       .from("doctors")
-      .select(
-        "id, specialization, consultation_fee, profiles:user_id(full_name)",
-      )
+      .select("id, specialization, consultation_fee, profiles:user_id(full_name)")
       .eq("active", true)
       .then(({ data, error }) => {
         if (error) toast.error(error.message);
@@ -109,7 +100,7 @@ function BookAppointment() {
 
   const book = async (slot: string) => {
     if (!user || !doctorId) return;
-    setLoading(true);
+    setBooking(true);
     const { error } = await supabase.from("appointments").insert({
       patient_id: user.id,
       doctor_id: doctorId,
@@ -117,7 +108,7 @@ function BookAppointment() {
       time_slot: slot,
       status: "Scheduled",
     });
-    setLoading(false);
+    setBooking(false);
     if (error) {
       toast.error(error.message);
       return;
@@ -142,10 +133,10 @@ function BookAppointment() {
                 <SelectValue placeholder={t("doctor")} />
               </SelectTrigger>
               <SelectContent>
-                {doctors.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.profiles?.full_name || d.specialization} —{" "}
-                    {d.specialization} ({Number(d.consultation_fee)})
+                {doctors.map((doctor) => (
+                  <SelectItem key={doctor.id} value={doctor.id}>
+                    {doctor.profiles?.full_name || doctor.specialization} —{" "}
+                    {doctor.specialization} ({Number(doctor.consultation_fee)})
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -175,15 +166,15 @@ function BookAppointment() {
               <p className="text-muted-foreground text-sm">{t("noSlots")}</p>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {slots.map((s) => (
+                {slots.map((slot) => (
                   <Button
-                    key={s}
+                    key={slot}
                     variant="outline"
                     size="sm"
-                    onClick={() => book(s)}
-                    disabled={loading}
+                    onClick={() => book(slot)}
+                    disabled={booking}
                   >
-                    {s}
+                    {slot}
                   </Button>
                 ))}
               </div>
@@ -198,12 +189,12 @@ function BookAppointment() {
 function MyAppointments() {
   const { user } = useAuth();
   const { t } = useI18n();
-  const [list, setList] = useState<any[]>([]);
-  const [listLoading, setListLoading] = useState(true);
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const load = () => {
+  function loadAppointments() {
     if (!user) return;
-    setListLoading(true);
+    setLoading(true);
     supabase
       .from("appointments")
       .select(
@@ -214,12 +205,12 @@ function MyAppointments() {
       .order("time_slot", { ascending: false })
       .then(({ data, error }) => {
         if (error) toast.error(error.message);
-        else setList(data ?? []);
+        else setAppointments(data ?? []);
       })
-      .finally(() => setListLoading(false));
-  };
+      .finally(() => setLoading(false));
+  }
 
-  useEffect(load, [user]);
+  useEffect(loadAppointments, [user]);
 
   const cancel = async (id: string) => {
     const { error } = await supabase
@@ -230,27 +221,27 @@ function MyAppointments() {
       toast.error(error.message);
       return;
     }
-    toast.success("✓");
-    load();
+    toast.success("Appointment cancelled");
+    loadAppointments();
   };
 
   return (
     <Card>
       <CardContent className="p-0">
         <div className="divide-y">
-          {listLoading && (
+          {loading && (
             <div className="p-8 text-center text-muted-foreground">
               {t("loading")}
             </div>
           )}
-          {!listLoading && list.length === 0 && (
+          {!loading && appointments.length === 0 && (
             <div className="p-8 text-center text-muted-foreground">
               {t("none")}
             </div>
           )}
-          {list.map((a) => (
+          {appointments.map((appt) => (
             <div
-              key={a.id}
+              key={appt.id}
               className="flex flex-wrap items-center justify-between gap-3 p-4"
             >
               <div className="flex items-center gap-3">
@@ -259,22 +250,22 @@ function MyAppointments() {
                 </div>
                 <div>
                   <div className="font-medium">
-                    {a.doctors?.profiles?.full_name ||
-                      a.doctors?.specialization}{" "}
-                    — {a.doctors?.specialization}
+                    {appt.doctors?.profiles?.full_name ||
+                      appt.doctors?.specialization}{" "}
+                    — {appt.doctors?.specialization}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {a.appointment_date} • {a.time_slot.slice(0, 5)}
+                    {appt.appointment_date} • {appt.time_slot.slice(0, 5)}
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <StatusBadge status={a.status} />
-                {a.status === "Scheduled" && (
+                <StatusBadge status={appt.status} />
+                {appt.status === "Scheduled" && (
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => cancel(a.id)}
+                    onClick={() => cancel(appt.id)}
                   >
                     {t("cancel")}
                   </Button>
@@ -291,12 +282,12 @@ function MyAppointments() {
 function MyHistory() {
   const { user } = useAuth();
   const { t } = useI18n();
-  const [list, setList] = useState<any[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(true);
+  const [records, setRecords] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
-    setHistoryLoading(true);
+    setLoading(true);
     supabase
       .from("appointments")
       .select(
@@ -307,62 +298,63 @@ function MyHistory() {
       .order("appointment_date", { ascending: false })
       .then(({ data, error }) => {
         if (error) toast.error(error.message);
-        else setList(data ?? []);
+        else setRecords(data ?? []);
       })
-      .finally(() => setHistoryLoading(false));
+      .finally(() => setLoading(false));
   }, [user]);
 
   return (
     <div className="space-y-3">
-      {historyLoading && (
+      {loading && (
         <div className="text-center text-muted-foreground py-8">
           {t("loading")}
         </div>
       )}
-      {!historyLoading && list.length === 0 && (
-        <div className="text-center text-muted-foreground py-8">
-          {t("none")}
-        </div>
+      {!loading && records.length === 0 && (
+        <div className="text-center text-muted-foreground py-8">{t("none")}</div>
       )}
-      {list.map((a) => (
-        <Card key={a.id}>
+      {records.map((appt) => (
+        <Card key={appt.id}>
           <CardHeader>
             <div className="flex justify-between items-start">
               <div>
                 <CardTitle className="text-base">
-                  {a.doctors?.profiles?.full_name || a.doctors?.specialization}{" "}
-                  — {a.doctors?.specialization}
+                  {appt.doctors?.profiles?.full_name ||
+                    appt.doctors?.specialization}{" "}
+                  — {appt.doctors?.specialization}
                 </CardTitle>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {a.appointment_date} • {a.time_slot.slice(0, 5)}
+                  {appt.appointment_date} • {appt.time_slot.slice(0, 5)}
                 </p>
               </div>
-              <Badge variant="secondary">✓</Badge>
+              <Badge variant="secondary">Completed</Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            {a.prescriptions?.[0] && (
+            {appt.prescriptions?.[0] && (
               <div>
                 <div className="font-semibold mb-1">{t("prescription")}</div>
                 <p className="text-muted-foreground whitespace-pre-wrap">
-                  {a.prescriptions[0].medications}
+                  {appt.prescriptions[0].medications}
                 </p>
-                {a.prescriptions[0].notes && (
+                {appt.prescriptions[0].notes && (
                   <p className="text-muted-foreground italic mt-1">
-                    {a.prescriptions[0].notes}
+                    {appt.prescriptions[0].notes}
                   </p>
                 )}
               </div>
             )}
-            {a.appointment_services?.length > 0 && (
+            {appt.appointment_services?.length > 0 && (
               <div>
                 <div className="font-semibold mb-1">{t("bill")}</div>
                 <ul className="text-muted-foreground space-y-0.5">
-                  {a.appointment_services.map((s: any, i: number) => (
-                    <li key={i}>
-                      • {s.services?.name} — {Number(s.price_at_time)}
-                    </li>
-                  ))}
+                  {appt.appointment_services.map(
+                    (item: any, index: number) => (
+                      <li key={index}>
+                        • {item.services?.name} — {Number(item.price_at_time)}
+                      </li>
+                    ),
+                  )}
                 </ul>
               </div>
             )}

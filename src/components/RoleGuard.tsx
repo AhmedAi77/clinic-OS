@@ -23,8 +23,10 @@ export function RoleGuard({
   if (!role || !allow.includes(role)) {
     return (
       <div className="container mx-auto py-20 text-center">
-        <h2 className="text-xl font-semibold mb-2">⛔ {t("none")}</h2>
-        <p className="text-muted-foreground">Access denied for current role.</p>
+        <h2 className="text-xl font-semibold mb-2">Access denied</h2>
+        <p className="text-muted-foreground">
+          You don&apos;t have permission to view this page.
+        </p>
       </div>
     );
   }

@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
+import { dashboardPath } from "@/lib/roles";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,24 +23,8 @@ function Login() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const homeForRole = () => {
-    switch (role) {
-      case "admin":
-        return "/admin" as const;
-      case "doctor":
-        return "/doctor" as const;
-      case "receptionist":
-        return "/reception" as const;
-      case "patient":
-        return "/patient" as const;
-      default:
-        return "/" as const;
-    }
-  };
-
   useEffect(() => {
-    if (user && role) navigate({ to: homeForRole() });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (user && role) navigate({ to: dashboardPath(role) });
   }, [user, role]);
 
   const submit = async (e: React.FormEvent) => {

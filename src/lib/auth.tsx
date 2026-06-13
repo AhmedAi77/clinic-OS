@@ -19,7 +19,7 @@ interface AuthCtx {
   refreshRole: () => Promise<void>;
 }
 
-const Ctx = createContext<AuthCtx | null>(null);
+const AuthContext = createContext<AuthCtx | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -87,16 +87,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <Ctx.Provider
+    <AuthContext.Provider
       value={{ session, user, role, loading, signOut, refreshRole }}
     >
       {children}
-    </Ctx.Provider>
+    </AuthContext.Provider>
   );
 }
 
 export function useAuth() {
-  const c = useContext(Ctx);
-  if (!c) throw new Error("useAuth must be used within AuthProvider");
-  return c;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
 }

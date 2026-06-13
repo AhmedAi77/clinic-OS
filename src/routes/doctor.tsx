@@ -4,7 +4,7 @@ import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { RoleGuard } from "@/components/RoleGuard";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Stethoscope, Plus, Pill } from "lucide-react";
 import { toast } from "sonner";
+import type { AppointmentStatus } from "@/types";
 
 export const Route = createFileRoute("/doctor")({
   head: () => ({ meta: [{ title: "Doctor — Viora" }] }),
@@ -57,33 +58,32 @@ function DoctorDashboard() {
       .finally(() => setDoctorLoading(false));
   }, [user]);
 
-  const load = () => {
-    if (!doctorId) return;
+  function loadQueue(id: string) {
     supabase
       .from("appointments")
       .select(
         "id, time_slot, status, profiles!appointments_patient_id_fkey(full_name, phone)",
       )
-      .eq("doctor_id", doctorId)
+      .eq("doctor_id", id)
       .in("status", ["Waiting", "InConsultation"])
       .eq("appointment_date", new Date().toISOString().slice(0, 10))
       .order("time_slot", { ascending: true })
       .then(({ data }) => setQueue(data ?? []));
-  };
+  }
 
   useEffect(() => {
     if (!doctorId) return;
-    load();
-    const ch = supabase
+    loadQueue(doctorId);
+    const channel = supabase
       .channel("doctor-queue")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "appointments" },
-        () => load(),
+        () => loadQueue(doctorId),
       )
       .subscribe();
     return () => {
-      supabase.removeChannel(ch);
+      supabase.removeChannel(channel);
     };
   }, [doctorId]);
 
@@ -103,16 +103,7 @@ function DoctorDashboard() {
     );
   }
 
-  const setStatus = async (
-    id: string,
-    status:
-      | "Waiting"
-      | "InConsultation"
-      | "PendingPayment"
-      | "Completed"
-      | "Cancelled"
-      | "Scheduled",
-  ) => {
+  const updateStatus = async (id: string, status: AppointmentStatus) => {
     const { error } = await supabase
       .from("appointments")
       .update({ status })
@@ -121,8 +112,7 @@ function DoctorDashboard() {
       toast.error(error.message);
       return;
     }
-    toast.success("✓");
-    load();
+    loadQueue(doctorId);
   };
 
   return (
@@ -136,37 +126,37 @@ function DoctorDashboard() {
                 {t("none")}
               </div>
             )}
-            {queue.map((a, idx) => (
+            {queue.map((appt, position) => (
               <div
-                key={a.id}
+                key={appt.id}
                 className="flex flex-wrap items-center justify-between gap-3 p-4"
               >
                 <div className="flex items-center gap-3">
                   <div className="size-10 rounded-xl gradient-primary grid place-items-center font-bold text-primary-foreground">
-                    {idx + 1}
+                    {position + 1}
                   </div>
                   <div>
-                    <div className="font-medium">{a.profiles?.full_name}</div>
+                    <div className="font-medium">{appt.profiles?.full_name}</div>
                     <div className="text-xs text-muted-foreground">
-                      {a.time_slot.slice(0, 5)}
+                      {appt.time_slot.slice(0, 5)}
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <StatusBadge status={a.status} />
-                  {a.status === "Waiting" && (
+                  <StatusBadge status={appt.status} />
+                  {appt.status === "Waiting" && (
                     <Button
                       size="sm"
-                      onClick={() => setStatus(a.id, "InConsultation")}
+                      onClick={() => updateStatus(appt.id, "InConsultation")}
                     >
                       <Stethoscope className="size-4 me-1" />
                       {t("startConsultation")}
                     </Button>
                   )}
-                  {a.status === "InConsultation" && (
+                  {appt.status === "InConsultation" && (
                     <ConsultationPanel
-                      apptId={a.id}
-                      onFinish={() => setStatus(a.id, "PendingPayment")}
+                      apptId={appt.id}
+                      onFinish={() => updateStatus(appt.id, "PendingPayment")}
                     />
                   )}
                 </div>
@@ -188,51 +178,57 @@ function ConsultationPanel({
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const [services, setServices] = useState<any[]>([]);
-  const [added, setAdded] = useState<any[]>([]);
-  const [serviceId, setServiceId] = useState("");
-  const [meds, setMeds] = useState("");
+  const [availableServices, setAvailableServices] = useState<any[]>([]);
+  const [addedServices, setAddedServices] = useState<any[]>([]);
+  const [selectedServiceId, setSelectedServiceId] = useState("");
+  const [medications, setMedications] = useState("");
   const [notes, setNotes] = useState("");
 
   useEffect(() => {
     if (!open) return;
+
     supabase
       .from("services")
       .select("*")
       .eq("active", true)
-      .then(({ data }) => setServices(data ?? []));
+      .then(({ data }) => setAvailableServices(data ?? []));
+
     supabase
       .from("appointment_services")
       .select("id, price_at_time, services(name)")
       .eq("appointment_id", apptId)
-      .then(({ data }) => setAdded(data ?? []));
+      .then(({ data }) => setAddedServices(data ?? []));
+
     supabase
       .from("prescriptions")
       .select("medications, notes")
       .eq("appointment_id", apptId)
       .maybeSingle()
       .then(({ data }) => {
-        setMeds(data?.medications ?? "");
+        setMedications(data?.medications ?? "");
         setNotes(data?.notes ?? "");
       });
   }, [open, apptId]);
 
   const addService = async () => {
-    if (!serviceId) return;
-    const svc = services.find((s) => s.id === serviceId);
-    if (!svc) return;
+    if (!selectedServiceId) return;
+    const service = availableServices.find((s) => s.id === selectedServiceId);
+    if (!service) return;
     const { error } = await supabase.from("appointment_services").insert({
       appointment_id: apptId,
-      service_id: serviceId,
-      price_at_time: svc.price,
+      service_id: selectedServiceId,
+      price_at_time: service.price,
     });
-    if (error) return toast.error(error.message);
-    setServiceId("");
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setSelectedServiceId("");
     supabase
       .from("appointment_services")
       .select("id, price_at_time, services(name)")
       .eq("appointment_id", apptId)
-      .then(({ data }) => setAdded(data ?? []));
+      .then(({ data }) => setAddedServices(data ?? []));
   };
 
   const removeService = async (id: string) => {
@@ -244,16 +240,14 @@ function ConsultationPanel({
       toast.error(error.message);
       return;
     }
-    setAdded(added.filter((a) => a.id !== id));
+    setAddedServices(addedServices.filter((s) => s.id !== id));
   };
 
   const finish = async () => {
-    const { error } = await supabase
-      .from("prescriptions")
-      .upsert(
-        { appointment_id: apptId, medications: meds, notes },
-        { onConflict: "appointment_id" },
-      );
+    const { error } = await supabase.from("prescriptions").upsert(
+      { appointment_id: apptId, medications, notes },
+      { onConflict: "appointment_id" },
+    );
     if (error) {
       toast.error(error.message);
       return;
@@ -278,14 +272,17 @@ function ConsultationPanel({
           <div>
             <Label>{t("addService")}</Label>
             <div className="flex gap-2 mt-1">
-              <Select value={serviceId} onValueChange={setServiceId}>
+              <Select
+                value={selectedServiceId}
+                onValueChange={setSelectedServiceId}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder={t("addService")} />
                 </SelectTrigger>
                 <SelectContent>
-                  {services.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name} — {Number(s.price)}
+                  {availableServices.map((service) => (
+                    <SelectItem key={service.id} value={service.id}>
+                      {service.name} — {Number(service.price)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -294,18 +291,18 @@ function ConsultationPanel({
                 <Plus className="size-4" />
               </Button>
             </div>
-            {added.length > 0 && (
+            {addedServices.length > 0 && (
               <ul className="mt-3 space-y-1 text-sm">
-                {added.map((a) => (
+                {addedServices.map((item) => (
                   <li
-                    key={a.id}
+                    key={item.id}
                     className="flex justify-between bg-secondary rounded px-3 py-1.5"
                   >
                     <span>
-                      {a.services?.name} — {Number(a.price_at_time)}
+                      {item.services?.name} — {Number(item.price_at_time)}
                     </span>
                     <button
-                      onClick={() => removeService(a.id)}
+                      onClick={() => removeService(item.id)}
                       className="text-destructive text-xs"
                     >
                       ✕
@@ -318,8 +315,8 @@ function ConsultationPanel({
           <div>
             <Label>{t("medications")}</Label>
             <Textarea
-              value={meds}
-              onChange={(e) => setMeds(e.target.value)}
+              value={medications}
+              onChange={(e) => setMedications(e.target.value)}
               rows={3}
               placeholder="Paracetamol 500mg x 3 days..."
             />

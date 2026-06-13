@@ -80,74 +80,86 @@ function Admin() {
   );
 }
 
+interface StatsState {
+  revenue: number;
+  patients: number;
+  appointments: number;
+  services: number;
+}
+
 function Stats() {
   const { t } = useI18n();
-  const [s, setS] = useState({
+  const [stats, setStats] = useState<StatsState>({
     revenue: 0,
     patients: 0,
-    appts: 0,
+    appointments: 0,
     services: 0,
   });
 
   useEffect(() => {
-    (async () => {
-      const today = new Date().toISOString().slice(0, 10);
+    async function fetchStats() {
+      const monthStart = new Date().toISOString().slice(0, 7) + "-01";
       const { data: completed } = await supabase
         .from("appointments")
         .select(
           "id, doctors(consultation_fee), appointment_services(price_at_time)",
         )
         .eq("status", "Completed")
-        .gte("appointment_date", today.slice(0, 7) + "-01");
-      const revenue = (completed ?? []).reduce((sum: number, a: any) => {
-        const fee = Number(a.doctors?.consultation_fee ?? 0);
-        const extras = (a.appointment_services ?? []).reduce(
-          (x: number, y: any) => x + Number(y.price_at_time),
+        .gte("appointment_date", monthStart);
+
+      const revenue = (completed ?? []).reduce((sum: number, appt: any) => {
+        const fee = Number(appt.doctors?.consultation_fee ?? 0);
+        const extras = (appt.appointment_services ?? []).reduce(
+          (x: number, svc: any) => x + Number(svc.price_at_time),
           0,
         );
         return sum + fee + extras;
       }, 0);
+
       const { count: patients } = await supabase
         .from("user_roles")
         .select("*", { count: "exact", head: true })
         .eq("role", "patient");
-      const { count: appts } = await supabase
+      const { count: appointments } = await supabase
         .from("appointments")
         .select("*", { count: "exact", head: true });
       const { count: services } = await supabase
         .from("services")
         .select("*", { count: "exact", head: true });
-      setS({
+
+      setStats({
         revenue,
         patients: patients ?? 0,
-        appts: appts ?? 0,
+        appointments: appointments ?? 0,
         services: services ?? 0,
       });
-    })();
+    }
+
+    fetchStats();
   }, []);
 
-  const items = [
+  const cards = [
     {
       label: t("totalRevenue"),
-      value: s.revenue.toFixed(2),
+      value: stats.revenue.toFixed(2),
       icon: DollarSign,
       color: "text-success",
     },
     {
       label: t("totalPatients"),
-      value: s.patients,
+      value: stats.patients,
       icon: Users,
       color: "text-info",
     },
     {
       label: t("totalAppointments"),
-      value: s.appts,
+      value: stats.appointments,
       icon: CalendarCheck,
       color: "text-primary",
     },
     {
       label: t("servicesCount"),
-      value: s.services,
+      value: stats.services,
       icon: Stethoscope,
       color: "text-accent",
     },
@@ -155,18 +167,20 @@ function Stats() {
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      {items.map((it, i) => (
-        <Card key={i}>
+      {cards.map((card) => (
+        <Card key={card.label}>
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs text-muted-foreground mb-1">{it.label}</p>
-                <p className="text-2xl font-bold">{it.value}</p>
+                <p className="text-xs text-muted-foreground mb-1">
+                  {card.label}
+                </p>
+                <p className="text-2xl font-bold">{card.value}</p>
               </div>
               <div
-                className={`size-10 rounded-xl bg-secondary grid place-items-center ${it.color}`}
+                className={`size-10 rounded-xl bg-secondary grid place-items-center ${card.color}`}
               >
-                <it.icon className="size-5" />
+                <card.icon className="size-5" />
               </div>
             </div>
           </CardContent>
@@ -176,44 +190,50 @@ function Stats() {
   );
 }
 
+const defaultDoctorForm = {
+  user_id: "",
+  specialization: "",
+  consultation_fee: "100",
+  working_hours_start: "09:00",
+  working_hours_end: "17:00",
+  slot_duration_minutes: "30",
+};
+
 function DoctorsTab() {
   const { t } = useI18n();
-  const [list, setList] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
+  const [doctors, setDoctors] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    user_id: "",
-    specialization: "",
-    consultation_fee: "100",
-    working_hours_start: "09:00",
-    working_hours_end: "17:00",
-    slot_duration_minutes: "30",
-  });
+  const [form, setForm] = useState(defaultDoctorForm);
 
-  const load = () => {
+  function loadDoctors() {
     supabase
       .from("doctors")
       .select("*, profiles:user_id(full_name)")
       .order("created_at", { ascending: false })
-      .then(({ data }) => setList(data ?? []));
-  };
+      .then(({ data }) => setDoctors(data ?? []));
+  }
+
   useEffect(() => {
-    load();
+    loadDoctors();
   }, []);
 
   useEffect(() => {
-    if (open)
-      supabase
-        .from("profiles")
-        .select("id, full_name")
-        .order("full_name")
-        .limit(200)
-        .then(({ data }) => setUsers(data ?? []));
+    if (!open) return;
+    supabase
+      .from("profiles")
+      .select("id, full_name")
+      .order("full_name")
+      .limit(200)
+      .then(({ data }) => setProfiles(data ?? []));
   }, [open]);
 
   const create = async () => {
-    if (!form.user_id || !form.specialization) return toast.error("…");
+    if (!form.user_id || !form.specialization) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
     const { error } = await supabase.from("doctors").insert({
       user_id: form.user_id,
       specialization: form.specialization,
@@ -222,14 +242,17 @@ function DoctorsTab() {
       working_hours_end: form.working_hours_end,
       slot_duration_minutes: Number(form.slot_duration_minutes),
     });
-    if (error) return toast.error(error.message);
-    // Also assign doctor role
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     await supabase
       .from("user_roles")
       .insert({ user_id: form.user_id, role: "doctor" });
-    toast.success("✓");
+    toast.success("Doctor added");
     setOpen(false);
-    load();
+    setForm(defaultDoctorForm);
+    loadDoctors();
   };
 
   const remove = async () => {
@@ -238,10 +261,11 @@ function DoctorsTab() {
       .from("doctors")
       .delete()
       .eq("id", deleteId);
-    if (error) toast.error(error.message);
-    else {
-      toast.success("✓");
-      load();
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Doctor removed");
+      loadDoctors();
     }
     setDeleteId(null);
   };
@@ -271,12 +295,12 @@ function DoctorsTab() {
                   onValueChange={(v) => setForm({ ...form, user_id: v })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="User" />
+                    <SelectValue placeholder="Select user" />
                   </SelectTrigger>
                   <SelectContent>
-                    {users.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.full_name || u.id.slice(0, 8)}
+                    {profiles.map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.full_name || profile.id.slice(0, 8)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -345,22 +369,25 @@ function DoctorsTab() {
       </CardHeader>
       <CardContent className="p-0">
         <div className="divide-y">
-          {list.map((d) => (
-            <div key={d.id} className="flex items-center justify-between p-4">
+          {doctors.map((doctor) => (
+            <div
+              key={doctor.id}
+              className="flex items-center justify-between p-4"
+            >
               <div>
                 <div className="font-medium">
-                  {d.profiles?.full_name || "—"}
+                  {doctor.profiles?.full_name || "—"}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {d.specialization} • {Number(d.consultation_fee)} •{" "}
-                  {d.working_hours_start.slice(0, 5)}–
-                  {d.working_hours_end.slice(0, 5)}
+                  {doctor.specialization} • {Number(doctor.consultation_fee)} •{" "}
+                  {doctor.working_hours_start.slice(0, 5)}–
+                  {doctor.working_hours_end.slice(0, 5)}
                 </div>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setDeleteId(d.id)}
+                onClick={() => setDeleteId(doctor.id)}
               >
                 <Trash2 className="size-4 text-destructive" />
               </Button>
@@ -376,10 +403,10 @@ function DoctorsTab() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete doctor?</AlertDialogTitle>
+            <AlertDialogTitle>Remove doctor?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove the doctor profile. This action
-              cannot be undone.
+              This will permanently remove the doctor profile and cannot be
+              undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -399,18 +426,20 @@ function DoctorsTab() {
 
 function ServicesTab() {
   const { t } = useI18n();
-  const [list, setList] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
   const [form, setForm] = useState({ name: "", price: "" });
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const load = () =>
+  function loadServices() {
     supabase
       .from("services")
       .select("*")
       .order("created_at", { ascending: false })
-      .then(({ data }) => setList(data ?? []));
+      .then(({ data }) => setServices(data ?? []));
+  }
+
   useEffect(() => {
-    load();
+    loadServices();
   }, []);
 
   const add = async () => {
@@ -418,20 +447,25 @@ function ServicesTab() {
     const { error } = await supabase
       .from("services")
       .insert({ name: form.name, price: Number(form.price) });
-    if (error) return toast.error(error.message);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     setForm({ name: "", price: "" });
-    load();
+    loadServices();
   };
+
   const remove = async () => {
     if (!deleteId) return;
     const { error } = await supabase
       .from("services")
       .delete()
       .eq("id", deleteId);
-    if (error) toast.error(error.message);
-    else {
-      toast.success("✓");
-      load();
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Service removed");
+      loadServices();
     }
     setDeleteId(null);
   };
@@ -460,18 +494,21 @@ function ServicesTab() {
           </Button>
         </div>
         <div className="divide-y border rounded-lg">
-          {list.map((s) => (
-            <div key={s.id} className="flex items-center justify-between p-3">
+          {services.map((service) => (
+            <div
+              key={service.id}
+              className="flex items-center justify-between p-3"
+            >
               <div>
-                <div className="font-medium">{s.name}</div>
+                <div className="font-medium">{service.name}</div>
                 <div className="text-xs text-muted-foreground">
-                  {Number(s.price)}
+                  {Number(service.price)}
                 </div>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setDeleteId(s.id)}
+                onClick={() => setDeleteId(service.id)}
               >
                 <Trash2 className="size-4 text-destructive" />
               </Button>
@@ -487,10 +524,9 @@ function ServicesTab() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete service?</AlertDialogTitle>
+            <AlertDialogTitle>Remove service?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove the service. This action cannot be
-              undone.
+              This will permanently remove the service and cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -510,31 +546,33 @@ function ServicesTab() {
 
 function RolesTab() {
   const { t } = useI18n();
-  const [users, setUsers] = useState<any[]>([]);
-  const [roles, setRoles] = useState<Record<string, string[]>>({});
+  const [profiles, setProfiles] = useState<any[]>([]);
+  const [roleMap, setRoleMap] = useState<Record<string, string[]>>({});
   const [revokeTarget, setRevokeTarget] = useState<{
     userId: string;
     role: string;
   } | null>(null);
 
-  const load = async () => {
-    const { data: us } = await supabase
+  async function loadRoles() {
+    const { data: users } = await supabase
       .from("profiles")
       .select("id, full_name")
       .order("full_name")
       .limit(200);
-    setUsers(us ?? []);
-    const { data: rs } = await supabase
+    setProfiles(users ?? []);
+
+    const { data: rows } = await supabase
       .from("user_roles")
       .select("user_id, role");
     const map: Record<string, string[]> = {};
-    (rs ?? []).forEach((r: any) => {
-      (map[r.user_id] = map[r.user_id] || []).push(r.role);
+    (rows ?? []).forEach((row: any) => {
+      (map[row.user_id] = map[row.user_id] || []).push(row.role);
     });
-    setRoles(map);
-  };
+    setRoleMap(map);
+  }
+
   useEffect(() => {
-    load();
+    loadRoles();
   }, []);
 
   const assign = async (
@@ -544,10 +582,14 @@ function RolesTab() {
     const { error } = await supabase
       .from("user_roles")
       .insert({ user_id: userId, role });
-    if (error) return toast.error(error.message);
-    toast.success("✓");
-    load();
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Role assigned");
+    loadRoles();
   };
+
   const revoke = async () => {
     if (!revokeTarget) return;
     const { error } = await supabase
@@ -555,8 +597,11 @@ function RolesTab() {
       .delete()
       .eq("user_id", revokeTarget.userId)
       .eq("role", revokeTarget.role);
-    if (error) toast.error(error.message);
-    else load();
+    if (error) {
+      toast.error(error.message);
+    } else {
+      loadRoles();
+    }
     setRevokeTarget(null);
   };
 
@@ -567,36 +612,38 @@ function RolesTab() {
       </CardHeader>
       <CardContent className="p-0">
         <div className="divide-y">
-          {users.map((u) => (
+          {profiles.map((profile) => (
             <div
-              key={u.id}
+              key={profile.id}
               className="flex flex-wrap items-center justify-between gap-3 p-4"
             >
               <div>
                 <div className="font-medium">
-                  {u.full_name || u.id.slice(0, 8)}
+                  {profile.full_name || profile.id.slice(0, 8)}
                 </div>
                 <div className="flex flex-wrap gap-1 mt-1">
-                  {(roles[u.id] || []).map((r) => (
+                  {(roleMap[profile.id] || []).map((role) => (
                     <button
-                      key={r}
-                      onClick={() => setRevokeTarget({ userId: u.id, role: r })}
+                      key={role}
+                      onClick={() =>
+                        setRevokeTarget({ userId: profile.id, role })
+                      }
                       className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full hover:bg-destructive/15 hover:text-destructive"
                     >
-                      {r} ✕
+                      {role} ✕
                     </button>
                   ))}
                 </div>
               </div>
-              <Select onValueChange={(v) => assign(u.id, v as any)}>
+              <Select onValueChange={(v) => assign(profile.id, v as any)}>
                 <SelectTrigger className="w-40">
                   <SelectValue placeholder={t("assignRole")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="admin">admin</SelectItem>
-                  <SelectItem value="doctor">doctor</SelectItem>
-                  <SelectItem value="receptionist">receptionist</SelectItem>
-                  <SelectItem value="patient">patient</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="doctor">Doctor</SelectItem>
+                  <SelectItem value="receptionist">Receptionist</SelectItem>
+                  <SelectItem value="patient">Patient</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -614,7 +661,7 @@ function RolesTab() {
             <AlertDialogTitle>Revoke role?</AlertDialogTitle>
             <AlertDialogDescription>
               This will remove the <strong>{revokeTarget?.role}</strong> role
-              from this user. This action cannot be undone.
+              from this user.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

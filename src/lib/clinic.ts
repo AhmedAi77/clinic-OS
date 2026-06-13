@@ -1,4 +1,3 @@
-// Helper to compute available time slots for a doctor on a date
 import { supabase } from "@/integrations/supabase/client";
 
 export function generateSlots(
@@ -43,7 +42,6 @@ export async function getAvailableSlots(doctorId: string, date: string) {
 }
 
 export async function calcBill(appointmentId: string) {
-  // Doctor consultation fee + sum of appointment_services.price_at_time
   const { data: appt } = await supabase
     .from("appointments")
     .select("doctor_id, doctors(consultation_fee)")

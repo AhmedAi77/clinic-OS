@@ -131,14 +131,14 @@ const dict = {
 
 type Key = keyof typeof dict;
 
-interface Ctx {
+interface I18nContextValue {
   lang: Lang;
   setLang: (l: Lang) => void;
   t: (key: Key) => string;
   dir: "ltr" | "rtl";
 }
 
-const I18nContext = createContext<Ctx | null>(null);
+const I18nContext = createContext<I18nContextValue | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>("ar");

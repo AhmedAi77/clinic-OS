@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { RoleGuard } from "@/components/RoleGuard";
 import { supabase } from "@/integrations/supabase/client";
@@ -27,6 +27,7 @@ import {
 import { toast } from "sonner";
 import { calcBill, getAvailableSlots } from "@/lib/clinic";
 import { CheckCircle2, UserPlus, Receipt } from "lucide-react";
+import type { AppointmentStatus } from "@/types";
 
 export const Route = createFileRoute("/reception")({
   head: () => ({ meta: [{ title: "Reception — Viora" }] }),
@@ -40,9 +41,9 @@ export const Route = createFileRoute("/reception")({
 function Reception() {
   const { t } = useI18n();
   const today = new Date().toISOString().slice(0, 10);
-  const [appts, setAppts] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<any[]>([]);
 
-  const load = () => {
+  function loadAppointments() {
     supabase
       .from("appointments")
       .select(
@@ -52,44 +53,36 @@ function Reception() {
       .order("time_slot", { ascending: true })
       .then(({ data, error }) => {
         if (error) toast.error(error.message);
-        else setAppts(data ?? []);
+        else setAppointments(data ?? []);
       });
-  };
+  }
 
   useEffect(() => {
-    load();
-    const ch = supabase
+    loadAppointments();
+    const channel = supabase
       .channel("reception-appts")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "appointments" },
-        () => load(),
+        () => loadAppointments(),
       )
       .subscribe();
     return () => {
-      supabase.removeChannel(ch);
+      supabase.removeChannel(channel);
     };
   }, []);
 
-  const setStatus = async (
-    id: string,
-    status:
-      | "Waiting"
-      | "InConsultation"
-      | "PendingPayment"
-      | "Completed"
-      | "Cancelled"
-      | "Scheduled",
-  ) => {
+  const updateStatus = async (id: string, status: AppointmentStatus) => {
     const { error } = await supabase
       .from("appointments")
       .update({ status })
       .eq("id", id);
     if (error) toast.error(error.message);
-    else toast.success("✓");
   };
 
-  const pendingPay = appts.filter((a) => a.status === "PendingPayment");
+  const pendingPayment = appointments.filter(
+    (a) => a.status === "PendingPayment",
+  );
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -97,20 +90,20 @@ function Reception() {
         <h1 className="text-2xl md:text-3xl font-bold">
           {t("receptionDashboard")}
         </h1>
-        <WalkInDialog onCreated={load} />
+        <WalkInDialog onCreated={loadAppointments} />
       </div>
 
-      {pendingPay.length > 0 && (
+      {pendingPayment.length > 0 && (
         <Card className="mb-6 border-warning/40 bg-warning/5">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Receipt className="size-4" />
-              {t("collectPayment")} ({pendingPay.length})
+              {t("collectPayment")} ({pendingPayment.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {pendingPay.map((a) => (
-              <BillRow key={a.id} appt={a} onPaid={load} />
+            {pendingPayment.map((appt) => (
+              <BillRow key={appt.id} appt={appt} onPaid={loadAppointments} />
             ))}
           </CardContent>
         </Card>
@@ -122,28 +115,28 @@ function Reception() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="divide-y">
-            {appts.length === 0 && (
+            {appointments.length === 0 && (
               <div className="p-8 text-center text-muted-foreground">
                 {t("none")}
               </div>
             )}
-            {appts.map((a) => (
+            {appointments.map((appt) => (
               <div
-                key={a.id}
+                key={appt.id}
                 className="flex flex-wrap items-center justify-between gap-3 p-4"
               >
                 <div className="flex items-center gap-3">
                   <div className="size-10 rounded-xl bg-secondary grid place-items-center font-semibold text-secondary-foreground text-sm">
-                    {a.time_slot.slice(0, 5)}
+                    {appt.time_slot.slice(0, 5)}
                   </div>
                   <div>
                     <div className="font-medium">
-                      {a.profiles?.full_name || "—"}
+                      {appt.profiles?.full_name || "—"}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {a.doctors?.profiles?.full_name} —{" "}
-                      {a.doctors?.specialization}
-                      {a.walk_in && (
+                      {appt.doctors?.profiles?.full_name} —{" "}
+                      {appt.doctors?.specialization}
+                      {appt.walk_in && (
                         <span className="ms-2 text-accent-foreground bg-accent/30 px-1.5 py-0.5 rounded">
                           walk-in
                         </span>
@@ -152,11 +145,11 @@ function Reception() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <StatusBadge status={a.status} />
-                  {a.status === "Scheduled" && (
+                  <StatusBadge status={appt.status} />
+                  {appt.status === "Scheduled" && (
                     <Button
                       size="sm"
-                      onClick={() => setStatus(a.id, "Waiting")}
+                      onClick={() => updateStatus(appt.id, "Waiting")}
                     >
                       <CheckCircle2 className="size-4 me-1" />
                       {t("checkIn")}
@@ -177,13 +170,13 @@ function BillRow({ appt, onPaid }: { appt: any; onPaid: () => void }) {
   const [bill, setBill] = useState<any>(null);
   const [open, setOpen] = useState(false);
 
-  const view = async () => {
-    const b = await calcBill(appt.id);
-    setBill(b);
+  const viewBill = async () => {
+    const result = await calcBill(appt.id);
+    setBill(result);
     setOpen(true);
   };
 
-  const pay = async () => {
+  const collectPayment = async () => {
     const { error } = await supabase
       .from("appointments")
       .update({ status: "Completed" })
@@ -193,7 +186,7 @@ function BillRow({ appt, onPaid }: { appt: any; onPaid: () => void }) {
       return;
     }
     setOpen(false);
-    toast.success("✓");
+    toast.success("Payment collected");
     onPaid();
   };
 
@@ -207,7 +200,7 @@ function BillRow({ appt, onPaid }: { appt: any; onPaid: () => void }) {
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
-          <Button size="sm" variant="default" onClick={view}>
+          <Button size="sm" variant="default" onClick={viewBill}>
             <Receipt className="size-4 me-1" />
             {t("bill")}
           </Button>
@@ -226,13 +219,13 @@ function BillRow({ appt, onPaid }: { appt: any; onPaid: () => void }) {
                   {bill.consultationFee.toFixed(2)}
                 </span>
               </div>
-              {bill.services.map((s: any, i: number) => (
+              {bill.services.map((service: any, i: number) => (
                 <div
                   key={i}
                   className="flex justify-between text-muted-foreground"
                 >
-                  <span>{s.name}</span>
-                  <span className="font-mono">{s.price.toFixed(2)}</span>
+                  <span>{service.name}</span>
+                  <span className="font-mono">{service.price.toFixed(2)}</span>
                 </div>
               ))}
               <div className="border-t pt-2 flex justify-between text-base font-bold">
@@ -244,7 +237,7 @@ function BillRow({ appt, onPaid }: { appt: any; onPaid: () => void }) {
             </div>
           )}
           <DialogFooter>
-            <Button onClick={pay}>
+            <Button onClick={collectPayment}>
               <CheckCircle2 className="size-4 me-1" />
               {t("collectPayment")}
             </Button>
@@ -264,6 +257,7 @@ function WalkInDialog({ onCreated }: { onCreated: () => void }) {
   const [patientId, setPatientId] = useState("");
   const [slots, setSlots] = useState<string[]>([]);
   const [slot, setSlot] = useState("");
+  const today = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
     if (!open) return;
@@ -280,13 +274,15 @@ function WalkInDialog({ onCreated }: { onCreated: () => void }) {
       .then(({ data }) => setPatients(data ?? []));
   }, [open]);
 
-  const today = new Date().toISOString().slice(0, 10);
   useEffect(() => {
     if (doctorId) getAvailableSlots(doctorId, today).then(setSlots);
   }, [doctorId]);
 
   const create = async () => {
-    if (!doctorId || !patientId || !slot) return toast.error("…");
+    if (!doctorId || !patientId || !slot) {
+      toast.error("Please fill in all fields");
+      return;
+    }
     const { error } = await supabase.from("appointments").insert({
       patient_id: patientId,
       doctor_id: doctorId,
@@ -295,8 +291,11 @@ function WalkInDialog({ onCreated }: { onCreated: () => void }) {
       status: "Waiting",
       walk_in: true,
     });
-    if (error) return toast.error(error.message);
-    toast.success("✓");
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Walk-in registered");
     setOpen(false);
     setDoctorId("");
     setPatientId("");
@@ -324,9 +323,9 @@ function WalkInDialog({ onCreated }: { onCreated: () => void }) {
                 <SelectValue placeholder={t("patient")} />
               </SelectTrigger>
               <SelectContent>
-                {patients.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.full_name || p.phone || p.id.slice(0, 8)}
+                {patients.map((patient) => (
+                  <SelectItem key={patient.id} value={patient.id}>
+                    {patient.full_name || patient.phone || patient.id.slice(0, 8)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -339,9 +338,9 @@ function WalkInDialog({ onCreated }: { onCreated: () => void }) {
                 <SelectValue placeholder={t("doctor")} />
               </SelectTrigger>
               <SelectContent>
-                {doctors.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.profiles?.full_name} — {d.specialization}
+                {doctors.map((doctor) => (
+                  <SelectItem key={doctor.id} value={doctor.id}>
+                    {doctor.profiles?.full_name} — {doctor.specialization}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -355,9 +354,9 @@ function WalkInDialog({ onCreated }: { onCreated: () => void }) {
                   <SelectValue placeholder={t("selectTime")} />
                 </SelectTrigger>
                 <SelectContent>
-                  {slots.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
+                  {slots.map((timeSlot) => (
+                    <SelectItem key={timeSlot} value={timeSlot}>
+                      {timeSlot}
                     </SelectItem>
                   ))}
                 </SelectContent>

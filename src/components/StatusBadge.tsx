@@ -1,13 +1,6 @@
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-
-type Status =
-  | "Scheduled"
-  | "Waiting"
-  | "InConsultation"
-  | "PendingPayment"
-  | "Completed"
-  | "Cancelled";
+import type { AppointmentStatus as Status } from "@/types";
 
 const styles: Record<Status, string> = {
   Scheduled: "bg-info/15 text-info border-info/30",
